@@ -23,10 +23,13 @@
 int main(int argc, char *argv[]){
 	system("sudo rmmod ftdi_sio");
 	system("sudo rmmod usbserial");
+	system("setserial /dev/ttyUSB0 low_latency");
+	system("setserial /dev/ttyUSB1 low_latency");
+
 	FT_STATUS ftStatus;
 	FT_HANDLE ftHandle0;
 	FT_HANDLE ftHandle1;
-	UCHAR Mask = 0xff;
+	UCHAR Mask = 0xFF;
 	UCHAR Mode;
 	UCHAR LatencyTimer = 2; //our default setting is 16
 	// size_t i;
@@ -94,12 +97,12 @@ int main(int argc, char *argv[]){
 		printf("FT_Open(%d) failed\n", 0);}
 	else{
 		printf("Port 0 FT_Open succeeded.  Handle is %p\n", ftHandle0);}
-	ftStatus = FT_SetTimeouts(ftHandle0, 500, 500);
-	ftStatus = FT_Open(1, &ftHandle1);
-	if(ftStatus != FT_OK) {
-		printf("FT_Open(%d) failed\n", 1);}
-	else{
-		printf("Port 1 FT_Open succeeded.  Handle is %p\n", ftHandle1);}
+	
+	// ftStatus = FT_Open(1, &ftHandle1);
+	// if(ftStatus != FT_OK) {
+	// 	printf("FT_Open(%d) failed\n", 1);}
+	// else{
+	// 	printf("Port 1 FT_Open succeeded.  Handle is %p\n", ftHandle1);}
 
 	Data.Signature1 = 0x00000000;
 	Data.Signature2 = 0xffffffff;
@@ -130,13 +133,12 @@ int main(int argc, char *argv[]){
 	printf("ProductId = 0x%04X\n", Data.ProductId);
 	printf("Manufacturer = %s\n", Data.Manufacturer);			
 	printf("ManufacturerId = %s\n", Data.ManufacturerId);
-	Mode = 0x00; //reset mode
-	if(FT_SetBitMode(ftHandle0, Mask, Mode) == FT_OK){
-		printf("Reset mode succeeded\n");}
-	else{
-		printf("Reset mode failed\n"); retCode=1; goto exit;}
-	usleep(10);
-	Mask = 0x00;
+	// Mode = 0x00; //reset mode
+	// if(FT_SetBitMode(ftHandle0, Mask, Mode) == FT_OK){
+	// 	printf("Reset mode succeeded\n");}
+	// else{
+	// 	printf("Reset mode failed\n"); retCode=1; goto exit;}
+	// usleep(1000);
 	Mode = 0x40;
 	if(FT_SetBitMode(ftHandle0, Mask, Mode) == FT_OK){
 		printf("set bit mode succeeded\n");}
@@ -144,25 +146,18 @@ int main(int argc, char *argv[]){
 		printf("set bit mode failed\n"); retCode=1; goto exit;}
 	
 	ftStatus = FT_SetLatencyTimer(ftHandle0, LatencyTimer);
-	FT_SetUSBParameters(ftHandle0, 65536, 65536);
-	FT_SetFlowControl(ftHandle0, FT_FLOW_RTS_CTS, 0, 0);
-	// FT_Purge(ftHandle0, FT_PURGE_RX | FT_PURGE_TX);
-	
-	
+	FT_SetUSBParameters(ftHandle0, 0x40000, 0x40000);
+	FT_SetFlowControl(ftHandle0, FT_FLOW_RTS_CTS, 0x0, 0x0);
+	FT_Purge(ftHandle0, FT_PURGE_RX);
+	ftStatus = FT_SetTimeouts(ftHandle0, 500, 500);
 	if(ftStatus == FT_OK){std::cout<<"set FT_SetTimeouts success."<<std::endl;}
 	start = std::chrono::high_resolution_clock::now();
-	for(int i = 0; i < 1; i++){
-		// std::cout<<i<<std::endl<<std::flush;
-		if(FT_Read(ftHandle0, rxBuffer, 65536, &byteCount) != FT_OK) {
+	for(int i = 0; i < 16384; i++){
+		std::cout<<i<<std::endl;
+		if(FT_Read(ftHandle0, rxBuffer, 65536, &byteCount) != FT_OK || byteCount != 65536) {
 						printf("Error while reading from the device. Exiting.\r\n");
                         goto exit;
                     }
-		// printf(byteCount);
-		printf("bytes read %d\n", byteCount);
-		for(int j=0; j<65536; j++){
-			printf("%x ", rxBuffer[j]);
-			// std::cout<<"i: "<<rxBuffer[j]<<std::endl;
-		}
 	}
 	std::cout<<std::endl;
 	stop = std::chrono::high_resolution_clock::now();
