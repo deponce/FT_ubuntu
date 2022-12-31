@@ -14,28 +14,32 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include "ftd2xx.h"
-
+#include <iostream>
+#include <chrono>
 #define BUF_SIZE 0x10
 
 #define MAX_DEVICES	1000
-
+#define OneSector 8
 int main(int argc, char *argv[]){
 	system("sudo rmmod ftdi_sio");
 	system("sudo rmmod usbserial");
 	FT_STATUS ftStatus;
 	FT_HANDLE ftHandle0;
 	FT_HANDLE ftHandle1;
-	size_t i;
+	UCHAR Mask = 0xff;
+	UCHAR Mode;
+	UCHAR LatencyTimer = 2; //our default setting is 16
+	// size_t i;
 	int retCode = EXIT_FAILURE;
 	DWORD libVersion = 0;
-	DWORD Flags;
-	DWORD Type;
-	DWORD ID;
-	DWORD LocID;
-	char SerialNumber[16];
-	char Description[64];
-	DWORD standardDevices = 0;
-	DWORD totalDevice = 0;
+	// DWORD Flags;
+	// DWORD Type;
+	// DWORD ID;
+	// DWORD LocID;
+	// char SerialNumber[16];
+	// char Description[64];
+	// DWORD standardDevices = 0;
+	// DWORD totalDevice = 0;
 	static FT_PROGRAM_DATA Data;
 	char *BufPtrs[3]; // pointer to array of 3 pointers
 	char Buffer1[64]; // buffer for description of first device
@@ -45,11 +49,21 @@ int main(int argc, char *argv[]){
 	BufPtrs[1] = Buffer2;
 	BufPtrs[2] = NULL; // last entry should be NULL
 
-	DWORD devIndex = 0; // first device
-	char Buffer[64]; // more than enough room!
+	UCHAR rxBuffer[65536] = {0};
+	// memset(rxBuffer,0,1028);
+	DWORD byteCount;
+	auto start = std::chrono::high_resolution_clock::now();
+	auto stop = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+	double mbps;
+	double secondsElapsed;
+	// DWORD devIndex = 0; // first device
+	// char Buffer[64]; // more than enough room!
 
-
+	DWORD RxBytes = 8;
+	DWORD BytesReceived;
 	DWORD numDevs;
+	// char RxBuffer[OneSector];
 	ftStatus = FT_GetLibraryVersion(&libVersion);
 	if (ftStatus == FT_OK)
 	{
@@ -80,6 +94,7 @@ int main(int argc, char *argv[]){
 		printf("FT_Open(%d) failed\n", 0);}
 	else{
 		printf("Port 0 FT_Open succeeded.  Handle is %p\n", ftHandle0);}
+	ftStatus = FT_SetTimeouts(ftHandle0, 500, 500);
 	ftStatus = FT_Open(1, &ftHandle1);
 	if(ftStatus != FT_OK) {
 		printf("FT_Open(%d) failed\n", 1);}
@@ -114,7 +129,48 @@ int main(int argc, char *argv[]){
 	printf("VendorId = 0x%04X\n", Data.VendorId);				
 	printf("ProductId = 0x%04X\n", Data.ProductId);
 	printf("Manufacturer = %s\n", Data.Manufacturer);			
-	printf("ManufacturerId = %s\n", Data.ManufacturerId);				
+	printf("ManufacturerId = %s\n", Data.ManufacturerId);
+	Mode = 0x00; //reset mode
+	if(FT_SetBitMode(ftHandle0, Mask, Mode) == FT_OK){
+		printf("Reset mode succeeded\n");}
+	else{
+		printf("Reset mode failed\n"); retCode=1; goto exit;}
+	usleep(10);
+	Mask = 0x00;
+	Mode = 0x40;
+	if(FT_SetBitMode(ftHandle0, Mask, Mode) == FT_OK){
+		printf("set bit mode succeeded\n");}
+	else{
+		printf("set bit mode failed\n"); retCode=1; goto exit;}
+	
+	ftStatus = FT_SetLatencyTimer(ftHandle0, LatencyTimer);
+	FT_SetUSBParameters(ftHandle0, 65536, 65536);
+	FT_SetFlowControl(ftHandle0, FT_FLOW_RTS_CTS, 0, 0);
+	// FT_Purge(ftHandle0, FT_PURGE_RX | FT_PURGE_TX);
+	
+	
+	if(ftStatus == FT_OK){std::cout<<"set FT_SetTimeouts success."<<std::endl;}
+	start = std::chrono::high_resolution_clock::now();
+	for(int i = 0; i < 1; i++){
+		// std::cout<<i<<std::endl<<std::flush;
+		if(FT_Read(ftHandle0, rxBuffer, 65536, &byteCount) != FT_OK) {
+						printf("Error while reading from the device. Exiting.\r\n");
+                        goto exit;
+                    }
+		// printf(byteCount);
+		printf("bytes read %d\n", byteCount);
+		for(int j=0; j<65536; j++){
+			printf("%x ", rxBuffer[j]);
+			// std::cout<<"i: "<<rxBuffer[j]<<std::endl;
+		}
+	}
+	std::cout<<std::endl;
+	stop = std::chrono::high_resolution_clock::now();
+	duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+	std::cout << "Read 1GB from the FTDI in : "
+	<< duration.count()/1000000. << " seconds" << std::endl;
+	mbps = 8589.934592 / (duration.count()/1000000.);
+	printf("Average read speed: %0.1f Mbps.\r\n", mbps);
 	exit:
     	return retCode;
 }
